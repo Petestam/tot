@@ -28,7 +28,19 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          <div className="pb-12">{children}</div>
+          <footer className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/5 bg-zinc-950/95 py-3 text-center text-xs text-zinc-500 backdrop-blur-sm">
+            <a
+              href="https://nohotashes.xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-400 transition-colors hover:text-zinc-200"
+            >
+              developed by NO HOT ASHES
+            </a>
+          </footer>
+        </Providers>
       </body>
     </html>
   );

@@ -6,6 +6,9 @@ import { useDrag } from '@use-gesture/react';
 
 type PinDto = { id: string; imageUrl: string | null; title: string };
 
+/** Reserve space for global site footer (fixed) */
+const mainMinH = 'min-h-[calc(100dvh-3.5rem)]';
+
 export function PlayClient({ slug }: { slug: string }) {
   const [publicId, setPublicId] = useState<string | null>(null);
   const [roundIndex, setRoundIndex] = useState(0);
@@ -104,7 +107,7 @@ export function PlayClient({ slug }: { slug: string }) {
 
   if (loading && !left) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-zinc-950 text-zinc-100">
+      <div className={`${mainMinH} flex items-center justify-center bg-zinc-950 text-zinc-100`}>
         <p className="text-lg">Loading…</p>
       </div>
     );
@@ -112,7 +115,7 @@ export function PlayClient({ slug }: { slug: string }) {
 
   if (error && !left) {
     return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-100 px-6">
+      <div className={`${mainMinH} flex flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-100 px-6`}>
         <p className="text-center text-red-400">{error}</p>
         <button
           type="button"
@@ -127,7 +130,7 @@ export function PlayClient({ slug }: { slug: string }) {
 
   if (done) {
     return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-zinc-900 to-black text-white px-6">
+      <div className={`${mainMinH} flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-zinc-900 to-black text-white px-6`}>
         <h1 className="text-3xl font-semibold tracking-tight">You&apos;re done</h1>
         <p className="text-zinc-400 text-center max-w-md">
           Thanks — your picks are recorded. Swipe or tap another round anytime.
@@ -146,7 +149,7 @@ export function PlayClient({ slug }: { slug: string }) {
   if (!left || !right) return null;
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-black text-white">
+    <div className={`${mainMinH} flex flex-col bg-black text-white`}>
       <header className="shrink-0 px-4 py-3 flex justify-between items-center border-b border-white/10">
         <span className="text-sm text-zinc-400">This or That</span>
         <span className="text-sm text-zinc-500">Round {roundIndex + 1}</span>
