@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Local dev: DATABASE_URL="file:./prisma/dev.db" (SQLite)
+// Production: DATABASE_URL=postgresql://... (set provider to postgresql below)
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model PinterestCredentials {
+  id           String    @id @default("singleton")
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  updatedAt    DateTime  @updatedAt
+}
+
+model GameInstance {
+  id               String    @id @default(cuid())
+  slug             String    @unique
+  name             String
+  pinterestBoardId String
+  lastSyncedAt     DateTime?
+  notes            String?
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  pins             Pin[]
+  sessions         PlaySession[]
+}
+
+model Pin {
+  id             String       @id @default(cuid())
+  instanceId     String
+  instance       GameInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  pinterestPinId String
+  imageUrl       String?
+  title          String
+  width          Int?
+  height         Int?
+
+  @@unique([instanceId, pinterestPinId])
+  @@index([instanceId])
+}
+
+model PlaySession {
+  id            String       @id @default(cuid())
+  publicId      String       @unique @default(uuid())
+  instanceId    String
+  instance      GameInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+  ipAddress     String?
+  userAgent     String?
+  referrer      String?
+  orderedPinIds    String
+  cursor           Int     @default(0)
+  currentLeftPinId  String?
+  currentRightPinId String?
+  choices          Choice[]
+
+  @@index([instanceId])
+}
+
+model Choice {
+  id              String      @id @default(cuid())
+  sessionId       String
+  session         PlaySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roundIndex      Int
+  leftPinId       String
+  rightPinId      String
+  pickedPinId     String
+  notPickedPinId  String
+  createdAt       DateTime    @default(now())
+
+  @@index([sessionId])
+  @@index([pickedPinId])
+  @@index([notPickedPinId])
+}
