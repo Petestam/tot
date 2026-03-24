@@ -71,6 +71,30 @@ Vercel serverless cannot use SQLite on the filesystem. Use **PostgreSQL** (e.g. 
 3. **Build command**: `npm run build` (default). **Install**: `npm install` (default).
 4. Copy every variable from [`.env.example`](./.env.example) into Vercel (Production at minimum). **Do not** commit `.env.local`.
 
+### Auto-deploy on every Git push
+
+Deployments from Git are **not** configured in this repo; they are turned on when the project is tied to GitHub in Vercel.
+
+1. Open **[vercel.com/new](https://vercel.com/new)** → **Import Git Repository**.
+2. Pick **GitHub**, install/authorize the Vercel app for your account/org if asked, then select **`Petestam/tot`** ([github.com/Petestam/tot](https://github.com/Petestam/tot)).
+3. Leave **Root Directory** as **`.`** (repository root), confirm **Framework Preset** is Next.js, then **Deploy**.
+
+After the first successful deploy:
+
+- **Pushes to `main`** → new **Production** deployment (your live URL).
+- **Pushes to other branches** → **Preview** deployments (unique URLs per branch/PR).
+
+To confirm or change behavior: **Vercel** → your project → **Settings** → **Git** (production branch, ignored build step, etc.).
+
+**CLI (optional)** — after `npx vercel login`, from this repo:
+
+```bash
+npx vercel link --yes              # create or attach a Vercel project
+npx vercel git connect https://github.com/Petestam/tot.git
+```
+
+That connects the linked Vercel project to the same remote so pushes trigger builds the same way as the dashboard import.
+
 ### 3. OAuth URLs (production)
 
 - **Pinterest** — In the [Pinterest app](https://developers.pinterest.com/), add redirect  
