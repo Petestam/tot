@@ -17,6 +17,8 @@
     "db:migrate": "prisma migrate dev"
   },
   "dependencies": {
+    "@neondatabase/serverless": "0.10.4",
+    "@prisma/adapter-neon": "5.22.0",
     "@prisma/client": "5.22.0",
     "@react-oauth/google": "^0.13.4",
     "@use-gesture/react": "^10.3.1",
@@ -25,7 +27,8 @@
     "nanoid": "^5.1.7",
     "next": "15.5.14",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -33,6 +36,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "15.5.14",
     "prisma": "5.22.0",

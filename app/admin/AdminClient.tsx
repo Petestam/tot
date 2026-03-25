@@ -16,8 +16,12 @@ type InstanceRow = {
   sessionCount: number;
 };
 
-export function AdminClient() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
+type AdminClientProps = {
+  initialAuthed: boolean;
+};
+
+export function AdminClient({ initialAuthed }: AdminClientProps) {
+  const [authed, setAuthed] = useState<boolean | null>(initialAuthed);
   const [password, setPassword] = useState('');
   const [instances, setInstances] = useState<InstanceRow[]>([]);
   const [boards, setBoards] = useState<{ id: string; name: string }[]>([]);
@@ -105,9 +109,11 @@ export function AdminClient() {
 
   useEffect(() => {
     if (authed) {
-      loadInstances().catch(() => {});
-      loadBoards().catch(() => {});
-      loadPinterestStatus().catch(() => {});
+      void Promise.all([
+        loadInstances(),
+        loadBoards(),
+        loadPinterestStatus(),
+      ]).catch(() => {});
     }
   }, [authed, loadInstances, loadBoards, loadPinterestStatus]);
 
@@ -117,6 +123,11 @@ export function AdminClient() {
     if (params.get('pinterest') === 'connected') {
       loadPinterestStatus().catch(() => {});
       loadBoards().catch(() => {});
+      window.history.replaceState({}, '', '/admin');
+    }
+    if (params.get('pinterest') === 'error') {
+      const msg = params.get('msg') || 'Pinterest connection failed';
+      setError(msg);
       window.history.replaceState({}, '', '/admin');
     }
   }, [authed, loadBoards, loadPinterestStatus]);

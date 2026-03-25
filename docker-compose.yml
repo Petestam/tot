@@ -1,7 +1,6 @@
-# Optional: Postgres for local dev if you prefer not to use SQLite.
+# Local Postgres for tot (optional if you use Neon for dev).
 # docker compose up -d
-# Then set DATABASE_URL=postgresql://tot:tot@localhost:5432/tot
-# and change prisma/schema.prisma datasource provider to "postgresql"
+# DATABASE_URL=postgresql://tot:tot@localhost:5432/tot
 services:
   db:
     image: postgres:16-alpine

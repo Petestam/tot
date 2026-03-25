@@ -4,27 +4,38 @@ Crowd-sourced pairwise choices from Pinterest boards: admin creates instances, s
 
 ## Test locally
 
-1. **Env** — Copy [`.env.example`](./.env.example) to `.env.local` (or use the repo’s `.env.local` template). At minimum:
+1. **Database** — The app uses **PostgreSQL** with the [**Neon serverless**](https://neon.tech/docs/serverless/serverless-driver) driver via [`@neondatabase/serverless`](https://www.npmjs.com/package/@neondatabase/serverless) + [`@prisma/adapter-neon`](https://www.npmjs.com/package/@prisma/adapter-neon). **SQLite `file:` URLs are not supported.**
 
-   - `DATABASE_URL="file:./prisma/dev.db"` (SQLite, no Docker)
+   **Option A — Neon** — Create a project at [neon.tech](https://neon.tech) and set **`DATABASE_URL`** to the **pooled** connection string (`*-pooler*` host). The Vercel + Neon integration usually provides this as `DATABASE_URL`.
+
+   **Option B — Docker Postgres** — `docker compose up -d`, then `DATABASE_URL=postgresql://tot:tot@localhost:5432/tot`.
+
+2. **Env** — Copy [`.env.example`](./.env.example) to `.env.local`. Required:
+
+   - `DATABASE_URL`
    - `ADMIN_PASSWORD`, `ADMIN_SECRET`, `TOKEN_ENCRYPTION_KEY`, `CRON_SECRET`
 
-2. **DB** — From the project root:
+3. **Schema** — From the project root:
 
    ```bash
-   npx prisma db push
    npx prisma generate
+   npx prisma db push
    ```
 
-3. **Dev server** — `npm run dev` → open [http://localhost:3000](http://localhost:3000).
+4. **Dev server** — `npm run dev` → open [http://localhost:3000](http://localhost:3000). If you ever switch databases or see stale `.next` module errors, run `npm run clean` first.
 
-4. **Admin** — [http://localhost:3000/admin](http://localhost:3000/admin). Sign in with **password** or **Google** (Connect modal). Password: `ADMIN_PASSWORD`.
+5. **Admin** — [http://localhost:3000/admin](http://localhost:3000/admin). Sign in with **password** or **Google** (Connect modal). Password: `ADMIN_PASSWORD`.
 
-5. **Google (optional)** — [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 2.0 Web client. Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_ID` (same value), plus `GOOGLE_ALLOWED_EMAILS` (comma-separated). Authorized JavaScript origins: `http://localhost:3000`. The Connect modal uses Google’s **popup** sign-in.
+6. **Google (optional)** — [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 2.0 Web client. Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_ID` (same value), plus `GOOGLE_ALLOWED_EMAILS` (comma-separated). Authorized JavaScript origins: `http://localhost:3000`. The Connect modal uses Google’s **popup** sign-in.
 
-6. **Pinterest (optional)** — Add `PINTEREST_APP_ID`, `PINTEREST_APP_SECRET`, `NEXT_PUBLIC_PINTEREST_APP_ID`. In the [Pinterest developer app](https://developers.pinterest.com/), redirect URI `http://localhost:3000/api/auth/pinterest/callback`. Use **Connect** in admin, create an instance, **Sync**, then open `/p/your-slug`.
+7. **Pinterest (optional)** — Add `PINTEREST_APP_ID`, `PINTEREST_APP_SECRET`, `NEXT_PUBLIC_PINTEREST_APP_ID`. The app builds the OAuth `redirect_uri` from **where you are** (`window.location.origin` in the browser; request headers + `VERCEL_URL` on the server), so it tracks each deployment URL automatically. Stored access tokens are refreshed automatically when Pinterest returns a refresh token; if Pinterest revokes the session entirely, use **Disconnect** and **Connect** again.
 
-**Postgres instead of SQLite** — Use [`docker-compose.yml`](./docker-compose.yml) (`docker compose up -d`), set `DATABASE_URL` to the Postgres URL, and in `prisma/schema.prisma` set `provider = "postgresql"`, then `npx prisma db push`.
+   In the [Pinterest developer app](https://developers.pinterest.com/), you must still **whitelist** each redirect URI (Pinterest does not allow wildcards). Format: `https://<host>/api/auth/pinterest/callback` (never `/admin`). Add at least:
+
+   - Local: `http://localhost:3000/api/auth/pinterest/callback`
+   - Production: `https://your-app.vercel.app/api/auth/pinterest/callback` and/or your custom domain
+
+   Preview deployments use a different `*.vercel.app` host each time — add those redirect URIs too if you use **Connect** from previews, or only connect from production. Use **Connect** in admin, create an instance, **Sync**, then open `/p/your-slug`.
 
 ## GitHub
 
@@ -52,17 +63,15 @@ If `tot` lives inside a larger monorepo, this folder now has its **own** `.git`.
 
 ### 1. Database (production)
 
-Vercel serverless cannot use SQLite on the filesystem. Use **PostgreSQL** (e.g. [Neon](https://neon.tech), Vercel Postgres).
+Use **[Neon](https://neon.tech)** (or any Postgres). In Vercel → **Environment Variables**, set **`DATABASE_URL`** (Neon’s **pooled** URL is best for serverless).
 
-1. In `prisma/schema.prisma`, set `provider = "postgresql"` under `datasource db` (keep `url = env("DATABASE_URL")`).
-2. In Vercel → Project → **Environment Variables**, set `DATABASE_URL` to your Postgres connection string (same for Production / Preview if you want).
-3. After the first deploy (or from your machine with prod `DATABASE_URL`):
+If `prisma db push` ever errors through the pooler, run it once with Neon’s **direct** (non-pooler) URL in `DATABASE_URL` locally, then switch back.
 
-   ```bash
-   npx prisma db push
-   ```
+Apply the schema after the first deploy:
 
-   That applies the schema to the remote database. For teams, prefer `prisma migrate` once you add migrations.
+```bash
+npx prisma db push
+```
 
 ### 2. Vercel project
 
@@ -97,9 +106,8 @@ That connects the linked Vercel project to the same remote so pushes trigger bui
 
 ### 3. OAuth URLs (production)
 
-- **Pinterest** — In the [Pinterest app](https://developers.pinterest.com/), add redirect  
-  `https://YOUR_DOMAIN/api/auth/pinterest/callback`  
-  and set `NEXT_PUBLIC_PINTEREST_APP_ID` / `PINTEREST_APP_ID` / `PINTEREST_APP_SECRET` in Vercel.
+- **Pinterest** — In the [Pinterest app](https://developers.pinterest.com/), whitelist  
+  `https://YOUR_DOMAIN/api/auth/pinterest/callback` (not `/admin`). Set `NEXT_PUBLIC_PINTEREST_APP_ID`, `PINTEREST_APP_ID`, and `PINTEREST_APP_SECRET` in Vercel. Redirect URI is **dynamic** per deployment; only set `NEXT_PUBLIC_APP_URL` if you hit a rare proxy issue (see [`.env.example`](./.env.example)).
 - **Google (admin)** — In Google Cloud OAuth client, add **Authorized JavaScript origins** and **redirect URIs** for `https://YOUR_DOMAIN`.
 
 ### 4. Cron (`vercel.json`)
