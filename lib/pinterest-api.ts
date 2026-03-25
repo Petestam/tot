@@ -16,6 +16,7 @@ const IMAGE_SIZE_KEYS = [
 ] as const;
 
 type PinterestImageInfo = { url?: string; width?: number; height?: number };
+const GIF_URL_HINT_RE = /\.gif(\?|#|$)/i;
 
 function pickFromImageSizeMap(images: Record<string, unknown>): string | null {
   for (const k of IMAGE_SIZE_KEYS) {
@@ -25,6 +26,18 @@ function pickFromImageSizeMap(images: Record<string, unknown>): string | null {
   for (const v of Object.values(images)) {
     const slot = v as PinterestImageInfo | undefined;
     if (slot?.url) return slot.url;
+  }
+  return null;
+}
+
+function pickGifFromImageSizeMap(images: Record<string, unknown>): string | null {
+  for (const k of IMAGE_SIZE_KEYS) {
+    const slot = images[k] as PinterestImageInfo | undefined;
+    if (slot?.url && GIF_URL_HINT_RE.test(slot.url)) return slot.url;
+  }
+  for (const v of Object.values(images)) {
+    const slot = v as PinterestImageInfo | undefined;
+    if (slot?.url && GIF_URL_HINT_RE.test(slot.url)) return slot.url;
   }
   return null;
 }
@@ -87,6 +100,31 @@ function deepFindFirstVideoUrl(obj: unknown, depth = 0): string | null {
   return null;
 }
 
+function deepFindFirstGifUrl(obj: unknown, depth = 0): string | null {
+  if (depth > 12 || obj === null || obj === undefined) return null;
+
+  if (typeof obj === 'string') {
+    return GIF_URL_HINT_RE.test(obj) ? obj : null;
+  }
+
+  if (Array.isArray(obj)) {
+    for (const el of obj) {
+      const u = deepFindFirstGifUrl(el, depth + 1);
+      if (u) return u;
+    }
+    return null;
+  }
+
+  if (typeof obj === 'object') {
+    for (const v of Object.values(obj as Record<string, unknown>)) {
+      const u = deepFindFirstGifUrl(v, depth + 1);
+      if (u) return u;
+    }
+  }
+
+  return null;
+}
+
 export type PinItem = {
   id: string;
   title: string;
@@ -126,15 +164,18 @@ export function mapPinterestPin(pin: PinterestPin): PinItem {
 
   // Standard single image
   if (mediaType === 'image' && media.images && typeof media.images === 'object') {
-    const url = pickFromImageSizeMap(media.images as Record<string, unknown>);
-    return { id: pin.id, title, imageUrl: url, videoUrl: null };
+    const images = media.images as Record<string, unknown>;
+    const animatedGifUrl = pickGifFromImageSizeMap(images) ?? deepFindFirstGifUrl(media);
+    const videoUrl = deepFindFirstVideoUrl(media);
+    const url = animatedGifUrl ?? pickFromImageSizeMap(images);
+    return { id: pin.id, title, imageUrl: url, videoUrl };
   }
 
   // Carousel / multiple images — first slide has nested images
   if (mediaType === 'multiple_images' && Array.isArray(media.items) && media.items.length > 0) {
     const first = media.items[0] as { images?: Record<string, unknown> };
     if (first?.images && typeof first.images === 'object') {
-      const url = pickFromImageSizeMap(first.images);
+      const url = pickGifFromImageSizeMap(first.images) ?? pickFromImageSizeMap(first.images);
       if (url) return { id: pin.id, title, imageUrl: url, videoUrl: null };
     }
     const url = deepFindUrl(media.items[0]);
