@@ -24,9 +24,83 @@ export function PlayClient({ slug }: { slug: string }) {
   const [hasBegun, setHasBegun] = useState(false);
   const [introOpen, setIntroOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
 
   const leftVideoRef = useRef<HTMLVideoElement | null>(null);
   const rightVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const mediaLabel = (pin: PinDtoWithMotion | null): string => {
+    if (!pin) return 'none';
+    if (pin.videoUrl) return 'video';
+    if (pin.imageUrl?.toLowerCase().includes('.gif')) return 'gif';
+    if (pin.imageUrl) return 'image';
+    return 'none';
+  };
+
+  const toRenderedUrl = (rawUrl: string | null): string | null => {
+    if (!rawUrl) return null;
+    if (rawUrl.startsWith('/api/media/proxy?u=')) return rawUrl;
+    try {
+      const u = new URL(rawUrl);
+      const host = u.hostname.toLowerCase();
+      if (
+        host === 'pinimg.com' ||
+        host.endsWith('.pinimg.com') ||
+        host === 'pinterestusercontent.com' ||
+        host.endsWith('.pinterestusercontent.com') ||
+        host === 'pinterest.com' ||
+        host.endsWith('.pinterest.com')
+      ) {
+        return `/api/media/proxy?u=${encodeURIComponent(rawUrl)}`;
+      }
+      return rawUrl;
+    } catch {
+      return rawUrl;
+    }
+  };
+
+  const reportMediaError = useCallback(
+    (args: {
+      side: 'left' | 'right';
+      pin: PinDtoWithMotion | null;
+      renderedUrl: string | null;
+      reason: string;
+    }) => {
+      const payload = {
+        slug,
+        publicId,
+        roundIndex,
+        side: args.side,
+        pinId: args.pin?.id ?? null,
+        mediaType: mediaLabel(args.pin) as 'video' | 'gif' | 'image' | 'none',
+        imageUrl: args.pin?.imageUrl ?? null,
+        videoUrl: args.pin?.videoUrl ?? null,
+        renderedUrl: args.renderedUrl,
+        reason: args.reason,
+      };
+
+      console.warn('[tot-media-error-client]', payload);
+
+      const body = JSON.stringify(payload);
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+          const blob = new Blob([body], { type: 'application/json' });
+          navigator.sendBeacon('/api/play/media-error', blob);
+          return;
+        }
+      } catch {
+        // fallback to fetch
+      }
+      void fetch('/api/play/media-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        credentials: 'omit',
+        keepalive: true,
+      }).catch(() => {});
+    },
+    [publicId, roundIndex, slug]
+  );
 
   const start = useCallback(async () => {
     setLoading(true);
@@ -86,6 +160,27 @@ export function PlayClient({ slug }: { slug: string }) {
     rightVideoRef.current.play().catch(() => {});
   }, [right?.videoUrl, publicId]);
 
+  useEffect(() => {
+    if (!debugMode) return;
+    console.info('[tot-debug] round media', {
+      slug,
+      publicId,
+      roundIndex,
+      left: {
+        pinId: left?.id ?? null,
+        mediaType: mediaLabel(left),
+        imageUrl: left?.imageUrl ?? null,
+        videoUrl: left?.videoUrl ?? null,
+      },
+      right: {
+        pinId: right?.id ?? null,
+        mediaType: mediaLabel(right),
+        imageUrl: right?.imageUrl ?? null,
+        videoUrl: right?.videoUrl ?? null,
+      },
+    });
+  }, [debugMode, slug, publicId, roundIndex, left, right]);
+
   const submitPick = useCallback(
     async (pickedPinId: string) => {
       if (!publicId) return;
@@ -133,6 +228,17 @@ export function PlayClient({ slug }: { slug: string }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [done, left, right, submitPick]);
+
+  useEffect(() => {
+    const onDebugKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'd' && e.shiftKey) {
+        e.preventDefault();
+        setDebugMode((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onDebugKey);
+    return () => window.removeEventListener('keydown', onDebugKey);
+  }, []);
 
   const bind = useDrag(
     ({ movement: [mx], velocity: [vx], last, cancel }) => {
@@ -248,10 +354,15 @@ export function PlayClient({ slug }: { slug: string }) {
 
   if (!left || !right) return null;
 
+  const leftVideoSrc = toRenderedUrl(left.videoUrl);
+  const rightVideoSrc = toRenderedUrl(right.videoUrl);
+  const leftImageSrc = toRenderedUrl(left.imageUrl);
+  const rightImageSrc = toRenderedUrl(right.imageUrl);
+
   return (
     <div className={`${mainMinH} flex flex-col bg-black text-white`}>
       <header className="shrink-0 px-4 py-3 border-b border-white/10">
-        <div className="flex items-start justify-center gap-3">
+        <div className="flex items-start justify-center gap-3 relative">
           <div className="flex items-center gap-2">
             <span className="text-sm text-zinc-400">This or That</span>
             <button
@@ -265,6 +376,19 @@ export function PlayClient({ slug }: { slug: string }) {
               i
             </button>
           </div>
+          <button
+            type="button"
+            aria-label="Toggle debug mode"
+            title="Toggle debug mode (Shift+D)"
+            onClick={() => setDebugMode((v) => !v)}
+            className={`absolute right-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border text-xs ${
+              debugMode
+                ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
+                : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
+            }`}
+          >
+            ·
+          </button>
         </div>
         <div className="mt-1 flex justify-center">
           <span className="text-sm text-zinc-500">Round {roundIndex + 1}</span>
@@ -290,24 +414,40 @@ export function PlayClient({ slug }: { slug: string }) {
         >
           {left.videoUrl ? (
             <video
-              key={left.videoUrl}
-              src={left.videoUrl}
+              key={leftVideoSrc ?? left.videoUrl}
+              src={leftVideoSrc ?? left.videoUrl}
               muted
               playsInline
               loop
               autoPlay
               preload="auto"
-              poster={left.imageUrl ?? undefined}
+              poster={leftImageSrc ?? undefined}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
               ref={(el) => {
                 leftVideoRef.current = el;
               }}
+              onError={() =>
+                reportMediaError({
+                  side: 'left',
+                  pin: left,
+                  renderedUrl: leftVideoSrc ?? left.videoUrl,
+                  reason: 'video element onError',
+                })
+              }
             />
           ) : left.imageUrl ? (
             <img
-              src={left.imageUrl}
+              src={leftImageSrc ?? left.imageUrl}
               alt={left.title || 'Option 1'}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+              onError={() =>
+                reportMediaError({
+                  side: 'left',
+                  pin: left,
+                  renderedUrl: leftImageSrc ?? left.imageUrl,
+                  reason: 'img element onError',
+                })
+              }
             />
           ) : null}
           <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-sm">
@@ -321,24 +461,40 @@ export function PlayClient({ slug }: { slug: string }) {
         >
           {right.videoUrl ? (
             <video
-              key={right.videoUrl}
-              src={right.videoUrl}
+              key={rightVideoSrc ?? right.videoUrl}
+              src={rightVideoSrc ?? right.videoUrl}
               muted
               playsInline
               loop
               autoPlay
               preload="auto"
-              poster={right.imageUrl ?? undefined}
+              poster={rightImageSrc ?? undefined}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
               ref={(el) => {
                 rightVideoRef.current = el;
               }}
+              onError={() =>
+                reportMediaError({
+                  side: 'right',
+                  pin: right,
+                  renderedUrl: rightVideoSrc ?? right.videoUrl,
+                  reason: 'video element onError',
+                })
+              }
             />
           ) : right.imageUrl ? (
             <img
-              src={right.imageUrl}
+              src={rightImageSrc ?? right.imageUrl}
               alt={right.title || 'Option 2'}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+              onError={() =>
+                reportMediaError({
+                  side: 'right',
+                  pin: right,
+                  renderedUrl: rightImageSrc ?? right.imageUrl,
+                  reason: 'img element onError',
+                })
+              }
             />
           ) : null}
           <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-sm">
@@ -346,6 +502,18 @@ export function PlayClient({ slug }: { slug: string }) {
           </span>
         </button>
       </div>
+
+      {debugMode && (
+        <div className="shrink-0 border-t border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-100">
+          <p className="font-medium">Debug mode ON (Shift+D to toggle)</p>
+          <p>Left: {mediaLabel(left)} | pin {left?.id ?? 'n/a'}</p>
+          <p className="break-all">left.imageUrl: {left?.imageUrl ?? 'null'}</p>
+          <p className="break-all">left.videoUrl: {left?.videoUrl ?? 'null'}</p>
+          <p>Right: {mediaLabel(right)} | pin {right?.id ?? 'n/a'}</p>
+          <p className="break-all">right.imageUrl: {right?.imageUrl ?? 'null'}</p>
+          <p className="break-all">right.videoUrl: {right?.videoUrl ?? 'null'}</p>
+        </div>
+      )}
     </div>
   );
 }
