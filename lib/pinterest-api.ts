@@ -52,10 +52,46 @@ function deepFindUrl(obj: unknown, depth = 0): string | null {
   return null;
 }
 
+const VIDEO_URL_HINT_RE = /\.(mp4|webm|ogg)(\?|#|$)/i;
+
+function looksLikeVideoUrl(url: string): boolean {
+  return VIDEO_URL_HINT_RE.test(url) || /\/video\//i.test(url) || /video/i.test(url);
+}
+
+/** Best-effort extraction of a playable video URL from Pinterest media objects. */
+function deepFindFirstVideoUrl(obj: unknown, depth = 0): string | null {
+  if (depth > 12 || obj === null || obj === undefined) return null;
+
+  if (typeof obj === 'string') {
+    return looksLikeVideoUrl(obj) ? obj : null;
+  }
+
+  if (Array.isArray(obj)) {
+    for (const el of obj) {
+      const u = deepFindFirstVideoUrl(el, depth + 1);
+      if (u) return u;
+    }
+    return null;
+  }
+
+  if (typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (typeof v === 'string' && looksLikeVideoUrl(v) && k.toLowerCase().includes('video')) {
+        return v;
+      }
+      const u = deepFindFirstVideoUrl(v, depth + 1);
+      if (u) return u;
+    }
+  }
+
+  return null;
+}
+
 export type PinItem = {
   id: string;
   title: string;
   imageUrl: string | null;
+  videoUrl: string | null;
   width?: number;
   height?: number;
 };
@@ -70,7 +106,7 @@ export function mapPinterestPin(pin: PinterestPin): PinItem {
   const title = pin.title ?? '';
   const media = pin.media;
   if (!media || typeof media !== 'object') {
-    return { id: pin.id, title, imageUrl: null };
+    return { id: pin.id, title, imageUrl: null, videoUrl: null };
   }
 
   const mediaType = media.media_type as string | undefined;
@@ -84,13 +120,14 @@ export function mapPinterestPin(pin: PinterestPin): PinItem {
         ? pickFromImageSizeMap(media.images as Record<string, unknown>)
         : null;
     const url = cover ?? fromImages;
-    return { id: pin.id, title, imageUrl: url };
+    const videoUrl = deepFindFirstVideoUrl(media);
+    return { id: pin.id, title, imageUrl: url, videoUrl };
   }
 
   // Standard single image
   if (mediaType === 'image' && media.images && typeof media.images === 'object') {
     const url = pickFromImageSizeMap(media.images as Record<string, unknown>);
-    return { id: pin.id, title, imageUrl: url };
+    return { id: pin.id, title, imageUrl: url, videoUrl: null };
   }
 
   // Carousel / multiple images — first slide has nested images
@@ -98,31 +135,31 @@ export function mapPinterestPin(pin: PinterestPin): PinItem {
     const first = media.items[0] as { images?: Record<string, unknown> };
     if (first?.images && typeof first.images === 'object') {
       const url = pickFromImageSizeMap(first.images);
-      if (url) return { id: pin.id, title, imageUrl: url };
+      if (url) return { id: pin.id, title, imageUrl: url, videoUrl: null };
     }
     const url = deepFindUrl(media.items[0]);
-    return { id: pin.id, title, imageUrl: url };
+    return { id: pin.id, title, imageUrl: url, videoUrl: null };
   }
 
   // Mixed carousel
   if (mediaType === 'multiple_mixed' && Array.isArray(media.items)) {
     const url = deepFindUrl(media.items);
-    return { id: pin.id, title, imageUrl: url };
+    return { id: pin.id, title, imageUrl: url, videoUrl: null };
   }
 
   // Legacy / unknown: try cover_image_url (some responses)
   if (typeof media.cover_image_url === 'string') {
-    return { id: pin.id, title, imageUrl: media.cover_image_url };
+    return { id: pin.id, title, imageUrl: media.cover_image_url, videoUrl: null };
   }
 
   // Generic images map without media_type
   if (media.images && typeof media.images === 'object') {
     const url = pickFromImageSizeMap(media.images as Record<string, unknown>);
-    if (url) return { id: pin.id, title, imageUrl: url };
+    if (url) return { id: pin.id, title, imageUrl: url, videoUrl: null };
   }
 
   const fallback = deepFindUrl(media);
-  return { id: pin.id, title, imageUrl: fallback };
+  return { id: pin.id, title, imageUrl: fallback, videoUrl: null };
 }
 
 export async function fetchAllBoardPins(
@@ -147,7 +184,7 @@ export async function fetchAllBoardPins(
     const rawItems: PinterestPin[] = data.items ?? [];
     for (const p of rawItems) {
       const item = mapPinterestPin(p);
-      if (item.imageUrl) all.push(item);
+      if (item.imageUrl || item.videoUrl) all.push(item);
     }
     bookmark = data.bookmark ?? null;
   } while (bookmark);

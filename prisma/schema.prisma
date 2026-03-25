@@ -36,6 +36,7 @@ model Pin {
   instance       GameInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   pinterestPinId String
   imageUrl       String?
+  videoUrl       String?
   title          String
   width          Int?
   height         Int?

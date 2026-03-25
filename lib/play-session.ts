@@ -5,6 +5,7 @@ import { fisherYatesShuffle, randomBool } from '@/lib/game-shuffle';
 export type PinDto = {
   id: string;
   imageUrl: string | null;
+  videoUrl: string | null;
   title: string;
 };
 
@@ -42,6 +43,7 @@ export function pinToDto(p: Pin): PinDto {
   return {
     id: p.id,
     imageUrl: p.imageUrl,
+    videoUrl: p.videoUrl,
     title: p.title,
   };
 }
@@ -67,8 +69,10 @@ export async function createPlaySession(
   const pins = await prisma.pin.findMany({
     where: {
       instanceId,
-      imageUrl: { not: null },
-      NOT: { imageUrl: '' },
+      OR: [
+        { imageUrl: { not: null }, NOT: { imageUrl: '' } },
+        { videoUrl: { not: null }, NOT: { videoUrl: '' } },
+      ],
     },
     select: { id: true },
   });
@@ -76,8 +80,8 @@ export async function createPlaySession(
     const total = await prisma.pin.count({ where: { instanceId } });
     throw new Error(
       total === 0
-        ? 'No images in this game yet. In Admin, open your instance and click Sync (board needs pins with images).'
-        : `Need at least 2 pins with image URLs (this game has ${total}). Add more pins to the Pinterest board and Sync again.`
+        ? 'No pins in this game yet. In Admin, open your instance and click Sync.'
+        : `Need at least 2 pins with media URLs (this game has ${total}). Add more pins to the Pinterest board and Sync again.`
     );
   }
 

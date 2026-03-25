@@ -17,7 +17,7 @@ export function InstanceInsightsDrawer({
   instanceName: string;
   instanceSlug: string;
 }) {
-  const { sessions, stats, loading } = useInstanceInsights(instanceId, open && !!instanceId);
+  const { sessions, stats, loading, refresh } = useInstanceInsights(instanceId, open && !!instanceId);
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +72,13 @@ export function InstanceInsightsDrawer({
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
-          <InstanceInsightsContent loading={loading} sessions={sessions} stats={stats} />
+          <InstanceInsightsContent
+            instanceId={instanceId}
+            loading={loading}
+            sessions={sessions}
+            stats={stats}
+            onRefresh={refresh}
+          />
         </div>
       </div>
     </div>

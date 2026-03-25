@@ -7,6 +7,7 @@ export function useInstanceInsights(instanceId: string | null, enabled: boolean)
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [stats, setStats] = useState<InstanceStats | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!enabled || !instanceId) {
@@ -48,7 +49,9 @@ export function useInstanceInsights(instanceId: string | null, enabled: boolean)
     return () => {
       cancelled = true;
     };
-  }, [instanceId, enabled]);
+  }, [instanceId, enabled, refreshKey]);
 
-  return { sessions, stats, loading };
+  const refresh = () => setRefreshKey((x) => x + 1);
+
+  return { sessions, stats, loading, refresh };
 }

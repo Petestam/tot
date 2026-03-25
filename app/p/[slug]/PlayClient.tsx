@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useDrag } from '@use-gesture/react';
 
-type PinDto = { id: string; imageUrl: string | null; title: string };
+// When a Pinterest pin is a video/gif, it may have a playable URL (videoUrl) in addition to a thumbnail.
+type PinDtoWithMotion = { id: string; imageUrl: string | null; videoUrl: string | null; title: string };
 
 /** Reserve space for global site footer (fixed) */
 const mainMinH = 'min-h-[calc(100dvh-3.5rem)]';
@@ -12,8 +13,8 @@ const mainMinH = 'min-h-[calc(100dvh-3.5rem)]';
 export function PlayClient({ slug }: { slug: string }) {
   const [publicId, setPublicId] = useState<string | null>(null);
   const [roundIndex, setRoundIndex] = useState(0);
-  const [left, setLeft] = useState<PinDto | null>(null);
-  const [right, setRight] = useState<PinDto | null>(null);
+  const [left, setLeft] = useState<PinDtoWithMotion | null>(null);
+  const [right, setRight] = useState<PinDtoWithMotion | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,13 +173,24 @@ export function PlayClient({ slug }: { slug: string }) {
           className="flex-1 relative min-w-0 border-r border-white/10 active:bg-white/5 transition-colors"
           onClick={() => submitPick(left.id)}
         >
-          {left.imageUrl && (
+          {left.videoUrl ? (
+            <video
+              src={left.videoUrl}
+              muted
+              playsInline
+              loop
+              autoPlay
+              preload="metadata"
+              poster={left.imageUrl ?? undefined}
+              className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+            />
+          ) : left.imageUrl ? (
             <img
               src={left.imageUrl}
               alt={left.title || 'Option 1'}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
             />
-          )}
+          ) : null}
           <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-sm">
             1 · Left
           </span>
@@ -188,13 +200,24 @@ export function PlayClient({ slug }: { slug: string }) {
           className="flex-1 relative min-w-0 active:bg-white/5 transition-colors"
           onClick={() => submitPick(right.id)}
         >
-          {right.imageUrl && (
+          {right.videoUrl ? (
+            <video
+              src={right.videoUrl}
+              muted
+              playsInline
+              loop
+              autoPlay
+              preload="metadata"
+              poster={right.imageUrl ?? undefined}
+              className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+            />
+          ) : right.imageUrl ? (
             <img
               src={right.imageUrl}
               alt={right.title || 'Option 2'}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
             />
-          )}
+          ) : null}
           <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-sm">
             2 · Right
           </span>

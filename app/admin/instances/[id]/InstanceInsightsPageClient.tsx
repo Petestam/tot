@@ -55,7 +55,10 @@ export function InstanceInsightsPageClient() {
     };
   }, [authed, id]);
 
-  const { sessions, stats, loading } = useInstanceInsights(id, authed === true && !!id && !!instance);
+  const { sessions, stats, loading, refresh } = useInstanceInsights(
+    id,
+    authed === true && !!id && !!instance
+  );
 
   if (authed === null) {
     return (
@@ -123,7 +126,13 @@ export function InstanceInsightsPageClient() {
           </div>
         </div>
 
-        <InstanceInsightsContent loading={loading} sessions={sessions} stats={stats} />
+        <InstanceInsightsContent
+          instanceId={id}
+          loading={loading}
+          sessions={sessions}
+          stats={stats}
+          onRefresh={refresh}
+        />
       </div>
     </div>
   );

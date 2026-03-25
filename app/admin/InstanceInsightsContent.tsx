@@ -1,24 +1,110 @@
 'use client';
 
+import { useState } from 'react';
 import type { InstanceStats, SessionRow } from './instance-insights-types';
 
 export function InstanceInsightsContent({
+  instanceId,
   loading,
   sessions,
   stats,
+  onRefresh,
 }: {
+  instanceId: string | null;
   loading: boolean;
   sessions: SessionRow[];
   stats: InstanceStats | null;
+  onRefresh: () => void;
 }) {
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [cleanupNote, setCleanupNote] = useState<string | null>(null);
+
   if (loading) {
     return <p className="text-sm text-zinc-500">Loading sessions and stats…</p>;
   }
 
+  const clearSessionsBefore = async (minutesAgo: number) => {
+    if (!instanceId) return;
+    setCleanupError(null);
+    setCleanupNote(null);
+    const createdBefore = new Date(Date.now() - minutesAgo * 60 * 1000).toISOString();
+    const ok = window.confirm(
+      `Delete sessions for this instance created before:\n${createdBefore}\n\nThis can affect active players who started recently.`
+    );
+    if (!ok) return;
+
+    setCleanupBusy(true);
+    try {
+      const r = await fetch(
+        `/api/admin/sessions?instanceId=${encodeURIComponent(instanceId)}&mode=before&createdBefore=${encodeURIComponent(
+          createdBefore
+        )}`,
+        { method: 'DELETE', credentials: 'include' }
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((d as { error?: string }).error || 'Cleanup failed');
+      setCleanupNote(`Deleted ${typeof d.deletedCount === 'number' ? d.deletedCount : 'sessions'} successfully.`);
+      onRefresh();
+    } catch (e) {
+      setCleanupError(e instanceof Error ? e.message : 'Cleanup failed');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+
+  const clearAllSessions = async () => {
+    if (!instanceId) return;
+    setCleanupError(null);
+    setCleanupNote(null);
+    const ok = window.confirm(
+      'Delete ALL sessions for this instance? This cannot be undone and will break any active sessions.'
+    );
+    if (!ok) return;
+
+    setCleanupBusy(true);
+    try {
+      const r = await fetch(
+        `/api/admin/sessions?instanceId=${encodeURIComponent(instanceId)}&mode=all`,
+        { method: 'DELETE', credentials: 'include' }
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((d as { error?: string }).error || 'Cleanup failed');
+      setCleanupNote(`Deleted ${typeof d.deletedCount === 'number' ? d.deletedCount : 'sessions'} successfully.`);
+      onRefresh();
+    } catch (e) {
+      setCleanupError(e instanceof Error ? e.message : 'Cleanup failed');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-10">
       <div>
-        <h3 className="mb-3 text-sm font-medium text-zinc-300">Sessions</h3>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-medium text-zinc-300">Sessions</h3>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void clearSessionsBefore(15)}
+              disabled={cleanupBusy}
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10 disabled:opacity-50"
+            >
+              Clear older than 15m
+            </button>
+            <button
+              type="button"
+              onClick={() => void clearAllSessions()}
+              disabled={cleanupBusy}
+              className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+            >
+              Clear all
+            </button>
+          </div>
+        </div>
+        {cleanupError && <p className="mb-3 text-sm text-red-400">{cleanupError}</p>}
+        {cleanupNote && <p className="mb-3 text-sm text-emerald-400/90">{cleanupNote}</p>}
         {sessions.length === 0 ? (
           <p className="text-sm text-zinc-500">No play sessions yet.</p>
         ) : (

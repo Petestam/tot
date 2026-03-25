@@ -34,3 +34,51 @@ export async function GET(req: NextRequest) {
     })),
   });
 }
+
+export async function DELETE(req: NextRequest) {
+  const denied = await requireAdminJson();
+  if (denied) return denied;
+
+  const { searchParams } = new URL(req.url);
+  const instanceId = searchParams.get('instanceId');
+  const mode = searchParams.get('mode');
+
+  if (!instanceId) {
+    return NextResponse.json({ error: 'instanceId required' }, { status: 400 });
+  }
+  if (!mode) {
+    return NextResponse.json(
+      { error: 'mode required: use mode=before&createdBefore=<ISO> or mode=all' },
+      { status: 400 }
+    );
+  }
+
+  if (mode === 'before') {
+    const createdBefore = searchParams.get('createdBefore');
+    if (!createdBefore) {
+      return NextResponse.json({ error: 'createdBefore required for mode=before' }, { status: 400 });
+    }
+    const dt = new Date(createdBefore);
+    if (Number.isNaN(dt.getTime())) {
+      return NextResponse.json({ error: 'createdBefore must be a valid ISO datetime' }, { status: 400 });
+    }
+
+    const r = await prisma.playSession.deleteMany({
+      where: { instanceId, createdAt: { lt: dt } },
+    });
+
+    return NextResponse.json({ ok: true, deletedCount: r.count });
+  }
+
+  if (mode === 'all') {
+    const r = await prisma.playSession.deleteMany({
+      where: { instanceId },
+    });
+    return NextResponse.json({ ok: true, deletedCount: r.count });
+  }
+
+  return NextResponse.json(
+    { error: 'Invalid mode. Use mode=before&createdBefore=<ISO> or mode=all.' },
+    { status: 400 }
+  );
+}
