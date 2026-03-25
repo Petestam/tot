@@ -19,7 +19,7 @@ export function PlayClient({ slug }: { slug: string }) {
   const [right, setRight] = useState<PinDtoWithMotion | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const [hasBegun, setHasBegun] = useState(false);
   const [introOpen, setIntroOpen] = useState(false);
