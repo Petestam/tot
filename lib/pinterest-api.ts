@@ -3,6 +3,8 @@
  * @see https://github.com/pinterest/api-description — PinMedia, ImageSize
  */
 
+import { isHttpMediaUrl, sanitizeImageUrl, sanitizeVideoUrl } from '@/lib/media-url';
+
 const IMAGE_SIZE_KEYS = [
   '1200x',
   '600x',
@@ -47,7 +49,7 @@ function deepFindUrl(obj: unknown, depth = 0): string | null {
   if (depth > 12 || obj === null || obj === undefined) return null;
   if (typeof obj === 'object' && !Array.isArray(obj)) {
     const u = (obj as { url?: unknown }).url;
-    if (typeof u === 'string' && u.startsWith('http')) return u;
+    if (typeof u === 'string' && isHttpMediaUrl(u)) return u;
   }
   if (Array.isArray(obj)) {
     for (const el of obj) {
@@ -130,7 +132,7 @@ function deepFindFirstGifUrl(obj: unknown, depth = 0): string | null {
 function collectHttpUrls(obj: unknown, out: Set<string>, depth = 0): void {
   if (depth > 12 || obj === null || obj === undefined) return;
   if (typeof obj === 'string') {
-    if (obj.startsWith('http')) out.add(obj);
+    if (isHttpMediaUrl(obj)) out.add(obj);
     return;
   }
   if (Array.isArray(obj)) {
@@ -165,6 +167,14 @@ export type PinItem = {
   width?: number;
   height?: number;
 };
+
+function normalizePinItem(item: PinItem): PinItem {
+  return {
+    ...item,
+    imageUrl: sanitizeImageUrl(item.imageUrl),
+    videoUrl: sanitizeVideoUrl(item.videoUrl),
+  };
+}
 
 type PinterestPin = {
   id: string;
@@ -288,7 +298,8 @@ export async function fetchAllBoardPins(
     }
 
     for (const item of mapped) {
-      if (item.imageUrl || item.videoUrl) all.push(item);
+      const n = normalizePinItem(item);
+      if (n.imageUrl || n.videoUrl) all.push(n);
     }
     bookmark = data.bookmark ?? null;
   } while (bookmark);

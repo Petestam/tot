@@ -1,7 +1,7 @@
 import type { Pin, PlaySession } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { fisherYatesShuffle, randomBool } from '@/lib/game-shuffle';
-import { sanitizeImageUrl, sanitizeVideoUrl } from '@/lib/media-url';
+import { hasRenderableMediaUrl, sanitizeImageUrl, sanitizeVideoUrl } from '@/lib/media-url';
 
 export type PinDto = {
   id: string;
@@ -67,7 +67,7 @@ export async function createPlaySession(
     throw new Error('This game is no longer available.');
   }
 
-  const pins = await prisma.pin.findMany({
+  const rawPins = await prisma.pin.findMany({
     where: {
       instanceId,
       OR: [
@@ -75,8 +75,9 @@ export async function createPlaySession(
         { videoUrl: { not: null }, NOT: { videoUrl: '' } },
       ],
     },
-    select: { id: true },
+    select: { id: true, imageUrl: true, videoUrl: true },
   });
+  const pins = rawPins.filter((p) => hasRenderableMediaUrl(p.imageUrl, p.videoUrl));
   if (pins.length < 2) {
     const total = await prisma.pin.count({ where: { instanceId } });
     throw new Error(

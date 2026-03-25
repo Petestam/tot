@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { sanitizeImageUrl, sanitizeVideoUrl } from '@/lib/media-url';
 import { fetchAllBoardPins } from '@/lib/pinterest-api';
 
 export async function syncInstancePins(instanceId: string, accessToken: string): Promise<{ count: number }> {
@@ -22,15 +23,15 @@ export async function syncInstancePins(instanceId: string, accessToken: string):
           create: {
             instanceId,
             pinterestPinId: p.id,
-            imageUrl: p.imageUrl,
-            videoUrl: p.videoUrl ?? null,
+            imageUrl: sanitizeImageUrl(p.imageUrl),
+            videoUrl: sanitizeVideoUrl(p.videoUrl),
             title: p.title,
             width: p.width ?? null,
             height: p.height ?? null,
           },
           update: {
-            imageUrl: p.imageUrl,
-            videoUrl: p.videoUrl ?? null,
+            imageUrl: sanitizeImageUrl(p.imageUrl),
+            videoUrl: sanitizeVideoUrl(p.videoUrl),
             title: p.title,
             width: p.width ?? null,
             height: p.height ?? null,

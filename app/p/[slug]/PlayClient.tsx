@@ -29,6 +29,7 @@ export function PlayClient({ slug }: { slug: string }) {
 
   const leftVideoRef = useRef<HTMLVideoElement | null>(null);
   const rightVideoRef = useRef<HTMLVideoElement | null>(null);
+  const choiceInFlight = useRef(false);
 
   const mediaLabel = (pin: PinDtoWithMotion | null): string => {
     if (!pin) return 'none';
@@ -184,7 +185,8 @@ export function PlayClient({ slug }: { slug: string }) {
 
   const submitPick = useCallback(
     async (pickedPinId: string) => {
-      if (!publicId) return;
+      if (!publicId || choiceInFlight.current) return;
+      choiceInFlight.current = true;
       setError(null);
       try {
         const res = await fetch(
@@ -209,6 +211,8 @@ export function PlayClient({ slug }: { slug: string }) {
         setRight(data.right);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Error');
+      } finally {
+        choiceInFlight.current = false;
       }
     },
     [publicId, slug]

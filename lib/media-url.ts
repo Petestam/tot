@@ -18,3 +18,11 @@ export function sanitizeVideoUrl(url: string | null | undefined): string | null 
 export function sanitizeImageUrl(url: string | null | undefined): string | null {
   return isHttpMediaUrl(url) ? url!.trim() : null;
 }
+
+/** At least one field is a usable http(s) media URL (for session eligibility). */
+export function hasRenderableMediaUrl(
+  imageUrl: string | null | undefined,
+  videoUrl: string | null | undefined
+): boolean {
+  return sanitizeImageUrl(imageUrl) !== null || sanitizeVideoUrl(videoUrl) !== null;
+}
