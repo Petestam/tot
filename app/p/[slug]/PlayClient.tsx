@@ -180,10 +180,12 @@ export function PlayClient({ slug }: { slug: string }) {
 
           <div className="mt-4 space-y-3 text-sm text-zinc-200">
             <p>
-              Your picks are recorded to help us learn which pins tend to “win” against each other.
+              This activity is designed to collect preferential and reactionary feedback from a distributed
+              group of people, so we can quickly surface the visuals that look and feel right for this
+              activation.
             </p>
-            <p className="text-zinc-500">
-              We log technical data (like IP and user agent) for analytics and to help keep sessions consistent.
+            <p className="text-zinc-400">
+              In short: it gives us a quick pulse on what is vibing and what is not.
             </p>
           </div>
 
@@ -270,7 +272,7 @@ export function PlayClient({ slug }: { slug: string }) {
       </header>
 
       <p className="text-center text-xs text-zinc-500 px-4 py-2">
-        Tap, use keys 1 / 2, or swipe ← / → · We log technical data (e.g. IP) for analytics.
+        Tap, use keys 1 / 2, or swipe ← / → to help us quickly see what is vibing.
       </p>
 
       {error && (
