@@ -125,6 +125,36 @@ function deepFindFirstGifUrl(obj: unknown, depth = 0): string | null {
   return null;
 }
 
+function collectHttpUrls(obj: unknown, out: Set<string>, depth = 0): void {
+  if (depth > 12 || obj === null || obj === undefined) return;
+  if (typeof obj === 'string') {
+    if (obj.startsWith('http')) out.add(obj);
+    return;
+  }
+  if (Array.isArray(obj)) {
+    for (const el of obj) collectHttpUrls(el, out, depth + 1);
+    return;
+  }
+  if (typeof obj === 'object') {
+    for (const v of Object.values(obj as Record<string, unknown>)) {
+      collectHttpUrls(v, out, depth + 1);
+    }
+  }
+}
+
+function pickBestAnimatedFromAnyPayload(obj: unknown): { imageUrl: string | null; videoUrl: string | null } {
+  const urls = new Set<string>();
+  collectHttpUrls(obj, urls);
+  const all = [...urls];
+  const video = all.find((u) => VIDEO_URL_HINT_RE.test(u)) ?? null;
+  const gif = all.find((u) => GIF_URL_HINT_RE.test(u)) ?? null;
+  const fallbackImage = all.find((u) => /\.(jpe?g|png|webp)(\?|#|$)/i.test(u)) ?? null;
+  return {
+    imageUrl: gif ?? fallbackImage,
+    videoUrl: video,
+  };
+}
+
 export type PinItem = {
   id: string;
   title: string;
@@ -138,6 +168,7 @@ type PinterestPin = {
   id: string;
   title?: string;
   media?: Record<string, unknown>;
+  [key: string]: unknown;
 };
 
 export function mapPinterestPin(pin: PinterestPin): PinItem {
@@ -223,8 +254,38 @@ export async function fetchAllBoardPins(
     }
     const data = (await r.json()) as { items?: PinterestPin[]; bookmark?: string | null };
     const rawItems: PinterestPin[] = data.items ?? [];
-    for (const p of rawItems) {
-      const item = mapPinterestPin(p);
+    const mapped = rawItems.map((p) => mapPinterestPin(p));
+
+    // Brute-force enrichment pass: fetch full pin payload for items that still look static.
+    // This is API-heavier but improves chances of finding real animated assets.
+    const needsEnrichment = mapped.filter(
+      (item) => !item.videoUrl && (!item.imageUrl || !GIF_URL_HINT_RE.test(item.imageUrl))
+    );
+    const enrichChunkSize = 10;
+    for (let i = 0; i < needsEnrichment.length; i += enrichChunkSize) {
+      const chunk = needsEnrichment.slice(i, i + enrichChunkSize);
+      await Promise.all(
+        chunk.map(async (item) => {
+          const dRes = await fetch(`https://api.pinterest.com/v5/pins/${encodeURIComponent(item.id)}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!dRes.ok) return;
+          const detail = (await dRes.json().catch(() => null)) as PinterestPin | null;
+          if (!detail) return;
+
+          const mappedDetail = mapPinterestPin(detail);
+          const brute = pickBestAnimatedFromAnyPayload(detail);
+
+          item.videoUrl = mappedDetail.videoUrl ?? brute.videoUrl ?? item.videoUrl;
+          const bestImage = mappedDetail.imageUrl ?? brute.imageUrl;
+          if (bestImage && (!item.imageUrl || !GIF_URL_HINT_RE.test(item.imageUrl))) {
+            item.imageUrl = bestImage;
+          }
+        })
+      );
+    }
+
+    for (const item of mapped) {
       if (item.imageUrl || item.videoUrl) all.push(item);
     }
     bookmark = data.bookmark ?? null;
