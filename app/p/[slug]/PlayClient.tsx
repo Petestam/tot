@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element -- Pinterest CDN URLs; avoid optimizer config */
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDrag } from '@use-gesture/react';
 
 // When a Pinterest pin is a video/gif, it may have a playable URL (videoUrl) in addition to a thumbnail.
@@ -11,6 +11,8 @@ type PinDtoWithMotion = { id: string; imageUrl: string | null; videoUrl: string 
 const mainMinH = 'min-h-[calc(100dvh-3.5rem)]';
 
 export function PlayClient({ slug }: { slug: string }) {
+  const introKey = useMemo(() => `tot_play_intro_dismissed_${slug}`, [slug]);
+
   const [publicId, setPublicId] = useState<string | null>(null);
   const [roundIndex, setRoundIndex] = useState(0);
   const [left, setLeft] = useState<PinDtoWithMotion | null>(null);
@@ -18,6 +20,13 @@ export function PlayClient({ slug }: { slug: string }) {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [hasBegun, setHasBegun] = useState(false);
+  const [introOpen, setIntroOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  const leftVideoRef = useRef<HTMLVideoElement | null>(null);
+  const rightVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const start = useCallback(async () => {
     setLoading(true);
@@ -42,8 +51,40 @@ export function PlayClient({ slug }: { slug: string }) {
   }, [slug]);
 
   useEffect(() => {
+    // First time visitor: show intro modal before starting the first session.
+    // Stored per-slug, so if you want to play a different game you’ll see it again.
+    try {
+      const dismissed = localStorage.getItem(introKey) === '1';
+      if (dismissed) {
+        setHasBegun(true);
+        setIntroOpen(false);
+      } else {
+        setHasBegun(false);
+        setIntroOpen(true);
+      }
+    } catch {
+      // If localStorage is blocked, still allow play.
+      setHasBegun(true);
+      setIntroOpen(false);
+    }
+  }, [introKey]);
+
+  useEffect(() => {
+    if (!hasBegun) return;
     start();
-  }, [start]);
+  }, [hasBegun, start]);
+
+  useEffect(() => {
+    // Autoplay is allowed only if muted; some browsers also require an explicit play() call.
+    // If play() fails, we leave the poster image visible.
+    if (!leftVideoRef.current) return;
+    leftVideoRef.current.play().catch(() => {});
+  }, [left?.videoUrl, publicId]);
+
+  useEffect(() => {
+    if (!rightVideoRef.current) return;
+    rightVideoRef.current.play().catch(() => {});
+  }, [right?.videoUrl, publicId]);
 
   const submitPick = useCallback(
     async (pickedPinId: string) => {
@@ -114,6 +155,62 @@ export function PlayClient({ slug }: { slug: string }) {
     );
   }
 
+  const introOrInfoOpen = introOpen && !hasBegun;
+
+  if (introOrInfoOpen || infoOpen) {
+    return (
+      <div className={`${mainMinH} flex flex-col items-center justify-center bg-black text-white px-6`}>
+        <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-950/80 p-6 shadow-xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">This or That</h1>
+              <p className="mt-2 text-sm text-zinc-400">
+                Tap, use keys 1 / 2, or swipe ← / → to choose between two Pinterest pins.
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setInfoOpen(false)}
+              className="mt-1 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-lg hover:bg-white/10"
+            >
+              i
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-3 text-sm text-zinc-200">
+            <p>
+              Your picks are recorded to help us learn which pins tend to “win” against each other.
+            </p>
+            <p className="text-zinc-500">
+              We log technical data (like IP and user agent) for analytics and to help keep sessions consistent.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (introOrInfoOpen) {
+                try {
+                  localStorage.setItem(introKey, '1');
+                } catch {
+                  // ignore
+                }
+                setIntroOpen(false);
+                setHasBegun(true);
+              } else {
+                setInfoOpen(false);
+              }
+            }}
+            className="mt-6 w-full rounded-xl bg-white text-zinc-900 py-3 font-medium"
+          >
+            {introOrInfoOpen ? 'Begin' : 'Close'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (error && !left) {
     return (
       <div className={`${mainMinH} flex flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-100 px-6`}>
@@ -151,9 +248,25 @@ export function PlayClient({ slug }: { slug: string }) {
 
   return (
     <div className={`${mainMinH} flex flex-col bg-black text-white`}>
-      <header className="shrink-0 px-4 py-3 flex justify-between items-center border-b border-white/10">
-        <span className="text-sm text-zinc-400">This or That</span>
-        <span className="text-sm text-zinc-500">Round {roundIndex + 1}</span>
+      <header className="shrink-0 px-4 py-3 border-b border-white/10">
+        <div className="flex items-start justify-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-zinc-400">This or That</span>
+            <button
+              type="button"
+              aria-label="What is this?"
+              onClick={() => {
+                setInfoOpen(true);
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-xs text-zinc-200 hover:bg-white/10"
+            >
+              i
+            </button>
+          </div>
+        </div>
+        <div className="mt-1 flex justify-center">
+          <span className="text-sm text-zinc-500">Round {roundIndex + 1}</span>
+        </div>
       </header>
 
       <p className="text-center text-xs text-zinc-500 px-4 py-2">
@@ -175,14 +288,18 @@ export function PlayClient({ slug }: { slug: string }) {
         >
           {left.videoUrl ? (
             <video
+              key={left.videoUrl}
               src={left.videoUrl}
               muted
               playsInline
               loop
               autoPlay
-              preload="metadata"
+              preload="auto"
               poster={left.imageUrl ?? undefined}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+              ref={(el) => {
+                leftVideoRef.current = el;
+              }}
             />
           ) : left.imageUrl ? (
             <img
@@ -202,14 +319,18 @@ export function PlayClient({ slug }: { slug: string }) {
         >
           {right.videoUrl ? (
             <video
+              key={right.videoUrl}
               src={right.videoUrl}
               muted
               playsInline
               loop
               autoPlay
-              preload="metadata"
+              preload="auto"
               poster={right.imageUrl ?? undefined}
               className="absolute inset-0 m-auto max-h-full max-w-full object-contain p-2"
+              ref={(el) => {
+                rightVideoRef.current = el;
+              }}
             />
           ) : right.imageUrl ? (
             <img
