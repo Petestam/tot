@@ -68,7 +68,8 @@ function deepFindUrl(obj: unknown, depth = 0): string | null {
 const VIDEO_URL_HINT_RE = /\.(mp4|webm|ogg)(\?|#|$)/i;
 
 function looksLikeVideoUrl(url: string): boolean {
-  return VIDEO_URL_HINT_RE.test(url) || /\/video\//i.test(url) || /video/i.test(url);
+  if (!/^https?:\/\//i.test(url)) return false;
+  return VIDEO_URL_HINT_RE.test(url) || /\/video\//i.test(url);
 }
 
 /** Best-effort extraction of a playable video URL from Pinterest media objects. */
@@ -104,6 +105,7 @@ function deepFindFirstGifUrl(obj: unknown, depth = 0): string | null {
   if (depth > 12 || obj === null || obj === undefined) return null;
 
   if (typeof obj === 'string') {
+    if (!/^https?:\/\//i.test(obj)) return null;
     return GIF_URL_HINT_RE.test(obj) ? obj : null;
   }
 
