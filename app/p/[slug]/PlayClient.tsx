@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDrag } from '@use-gesture/react';
+import { isHttpMediaUrl } from '@/lib/media-url';
 
 // When a Pinterest pin is a video/gif, it may have a playable URL (videoUrl) in addition to a thumbnail.
 type PinDtoWithMotion = { id: string; imageUrl: string | null; videoUrl: string | null; title: string };
@@ -31,7 +32,7 @@ export function PlayClient({ slug }: { slug: string }) {
 
   const mediaLabel = (pin: PinDtoWithMotion | null): string => {
     if (!pin) return 'none';
-    if (pin.videoUrl) return 'video';
+    if (isHttpMediaUrl(pin.videoUrl)) return 'video';
     if (pin.imageUrl?.toLowerCase().includes('.gif')) return 'gif';
     if (pin.imageUrl) return 'image';
     return 'none';
@@ -55,7 +56,7 @@ export function PlayClient({ slug }: { slug: string }) {
       }
       return rawUrl;
     } catch {
-      return rawUrl;
+      return null;
     }
   };
 
@@ -412,10 +413,10 @@ export function PlayClient({ slug }: { slug: string }) {
           className="flex-1 relative min-w-0 border-r border-white/10 active:bg-white/5 transition-colors"
           onClick={() => submitPick(left.id)}
         >
-          {left.videoUrl ? (
+          {isHttpMediaUrl(left.videoUrl) ? (
             <video
               key={leftVideoSrc ?? left.videoUrl}
-              src={leftVideoSrc ?? left.videoUrl}
+              src={leftVideoSrc ?? left.videoUrl!}
               muted
               playsInline
               loop
@@ -430,7 +431,7 @@ export function PlayClient({ slug }: { slug: string }) {
                 reportMediaError({
                   side: 'left',
                   pin: left,
-                  renderedUrl: leftVideoSrc ?? left.videoUrl,
+                  renderedUrl: leftVideoSrc ?? left.videoUrl ?? null,
                   reason: 'video element onError',
                 })
               }
@@ -459,10 +460,10 @@ export function PlayClient({ slug }: { slug: string }) {
           className="flex-1 relative min-w-0 active:bg-white/5 transition-colors"
           onClick={() => submitPick(right.id)}
         >
-          {right.videoUrl ? (
+          {isHttpMediaUrl(right.videoUrl) ? (
             <video
               key={rightVideoSrc ?? right.videoUrl}
-              src={rightVideoSrc ?? right.videoUrl}
+              src={rightVideoSrc ?? right.videoUrl!}
               muted
               playsInline
               loop
@@ -477,7 +478,7 @@ export function PlayClient({ slug }: { slug: string }) {
                 reportMediaError({
                   side: 'right',
                   pin: right,
-                  renderedUrl: rightVideoSrc ?? right.videoUrl,
+                  renderedUrl: rightVideoSrc ?? right.videoUrl ?? null,
                   reason: 'video element onError',
                 })
               }

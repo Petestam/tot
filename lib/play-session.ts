@@ -1,6 +1,7 @@
 import type { Pin, PlaySession } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { fisherYatesShuffle, randomBool } from '@/lib/game-shuffle';
+import { sanitizeImageUrl, sanitizeVideoUrl } from '@/lib/media-url';
 
 export type PinDto = {
   id: string;
@@ -42,8 +43,8 @@ export async function loadPinsMap(ids: string[]): Promise<Map<string, Pin>> {
 export function pinToDto(p: Pin): PinDto {
   return {
     id: p.id,
-    imageUrl: p.imageUrl,
-    videoUrl: p.videoUrl,
+    imageUrl: sanitizeImageUrl(p.imageUrl),
+    videoUrl: sanitizeVideoUrl(p.videoUrl),
     title: p.title,
   };
 }
