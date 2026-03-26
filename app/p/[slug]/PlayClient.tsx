@@ -17,6 +17,103 @@ type PinDtoWithMotion = {
 
 type PinterestPinRawDebug = { loading: boolean; error: string | null; payload: unknown | null };
 
+function findPinterestBoardUrlFromPinPayload(
+  pinPayload: unknown,
+  boardId: string | null
+): string | null {
+  if (!boardId?.trim()) return null;
+  if (!pinPayload || typeof pinPayload !== 'object') return null;
+
+  const target = boardId.trim();
+
+  // Fast-path: if Pinterest includes a top-level `board: { url/link }`.
+  const maybeBoard = (pinPayload as Record<string, unknown>).board;
+  if (maybeBoard && typeof maybeBoard === 'object') {
+    const b = maybeBoard as Record<string, unknown>;
+    for (const k of ['url', 'link', 'board_url', 'website_url']) {
+      const candidate = b[k];
+      if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate) && candidate.includes(target)) {
+        return candidate;
+      }
+    }
+  }
+
+  const visit = (v: unknown, depth: number): string | null => {
+    if (depth > 6) return null;
+    if (typeof v === 'string') {
+      if (!v.includes('pinterest.com')) return null;
+      if (!v.includes(target)) return null;
+      // Prefer typical board-ish paths, but accept any URL containing the board id.
+      if (v.includes('/boards/') || v.includes('/board/') || v.includes('/ideas/')) return v;
+      return v;
+    }
+    if (Array.isArray(v)) {
+      for (const el of v) {
+        const found = visit(el, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (typeof v === 'object' && v !== null) {
+      for (const val of Object.values(v as Record<string, unknown>)) {
+        const found = visit(val, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  return visit(pinPayload, 0);
+}
+
+function toRenderedUrl(rawUrl: string | null): string | null {
+  if (!rawUrl) return null;
+  if (rawUrl.startsWith('/api/media/proxy?u=')) return rawUrl;
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.toLowerCase();
+    if (
+      host === 'pinimg.com' ||
+      host.endsWith('.pinimg.com') ||
+      host === 'pinterestusercontent.com' ||
+      host.endsWith('.pinterestusercontent.com') ||
+      host === 'pinterest.com' ||
+      host.endsWith('.pinterest.com')
+    ) {
+      return `/api/media/proxy?u=${encodeURIComponent(rawUrl)}`;
+    }
+    return rawUrl;
+  } catch {
+    return null;
+  }
+}
+
+function prefetchPinMedia(pin: PinDtoWithMotion) {
+  if (isNativeVideoElementUrl(pin.videoUrl)) {
+    const vid = toRenderedUrl(pin.videoUrl) ?? pin.videoUrl;
+    if (vid) {
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.muted = true;
+      v.src = vid;
+    }
+    if (pin.imageUrl) {
+      const poster = toRenderedUrl(pin.imageUrl) ?? pin.imageUrl;
+      const img = new Image();
+      img.src = poster;
+    }
+  } else if (pin.imageUrl) {
+    const src = toRenderedUrl(pin.imageUrl) ?? pin.imageUrl;
+    const img = new Image();
+    img.src = src;
+  }
+}
+
+function prefetchNextRoundMedia(pair: { left: PinDtoWithMotion; right: PinDtoWithMotion }) {
+  prefetchPinMedia(pair.left);
+  prefetchPinMedia(pair.right);
+}
+
 /** Reserve space for global site footer (fixed) */
 const mainMinH = 'min-h-[calc(100dvh-3.5rem)]';
 
@@ -35,6 +132,9 @@ export function PlayClient({ slug }: { slug: string }) {
   const [introOpen, setIntroOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [pinterestBoardId, setPinterestBoardId] = useState<string | null>(null);
+  const [pinterestBoardUrl, setPinterestBoardUrl] = useState<string | null>(null);
+  const [preloadNext, setPreloadNext] = useState<{ left: PinDtoWithMotion; right: PinDtoWithMotion } | null>(null);
   const [leftPinterestRaw, setLeftPinterestRaw] = useState<PinterestPinRawDebug | null>(null);
   const [rightPinterestRaw, setRightPinterestRaw] = useState<PinterestPinRawDebug | null>(null);
 
@@ -55,28 +155,6 @@ export function PlayClient({ slug }: { slug: string }) {
     if (img.includes('/videos/thumbnails/')) return 'video_poster';
     if (pin.imageUrl) return 'image';
     return 'none';
-  };
-
-  const toRenderedUrl = (rawUrl: string | null): string | null => {
-    if (!rawUrl) return null;
-    if (rawUrl.startsWith('/api/media/proxy?u=')) return rawUrl;
-    try {
-      const u = new URL(rawUrl);
-      const host = u.hostname.toLowerCase();
-      if (
-        host === 'pinimg.com' ||
-        host.endsWith('.pinimg.com') ||
-        host === 'pinterestusercontent.com' ||
-        host.endsWith('.pinterestusercontent.com') ||
-        host === 'pinterest.com' ||
-        host.endsWith('.pinterest.com')
-      ) {
-        return `/api/media/proxy?u=${encodeURIComponent(rawUrl)}`;
-      }
-      return rawUrl;
-    } catch {
-      return null;
-    }
   };
 
   const reportMediaError = useCallback(
@@ -128,6 +206,14 @@ export function PlayClient({ slug }: { slug: string }) {
     [publicId, roundIndex, slug]
   );
 
+  const pinterestBoardUrlFromDebug = useMemo(() => {
+    const fromLeft = findPinterestBoardUrlFromPinPayload(leftPinterestRaw?.payload ?? null, pinterestBoardId);
+    if (fromLeft) return fromLeft;
+    return findPinterestBoardUrlFromPinPayload(rightPinterestRaw?.payload ?? null, pinterestBoardId);
+  }, [leftPinterestRaw?.payload, rightPinterestRaw?.payload, pinterestBoardId]);
+
+  const pinterestBoardUrlFinal = pinterestBoardUrl ?? pinterestBoardUrlFromDebug;
+
   const start = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -140,6 +226,9 @@ export function PlayClient({ slug }: { slug: string }) {
       if (!res.ok) throw new Error(data.error || 'Failed to start');
       setPublicId(data.publicId);
       setRoundIndex(data.roundIndex);
+      setPinterestBoardId(data.pinterestBoardId ?? null);
+      setPinterestBoardUrl(data.pinterestBoardUrl ?? null);
+      setPreloadNext(data.preloadNext ?? null);
       setLeft(data.left);
       setRight(data.right);
       setDone(false);
@@ -149,6 +238,11 @@ export function PlayClient({ slug }: { slug: string }) {
       setLoading(false);
     }
   }, [slug]);
+
+  useEffect(() => {
+    if (!preloadNext) return;
+    prefetchNextRoundMedia(preloadNext);
+  }, [preloadNext?.left?.id, preloadNext?.right?.id]);
 
   useEffect(() => {
     // First time visitor: show intro modal before starting the first session.
@@ -296,11 +390,13 @@ export function PlayClient({ slug }: { slug: string }) {
           setDone(true);
           setLeft(null);
           setRight(null);
+          setPreloadNext(null);
           return;
         }
         setRoundIndex(data.roundIndex);
         setLeft(data.left);
         setRight(data.right);
+        setPreloadNext(data.preloadNext ?? null);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Error');
       } finally {
@@ -473,19 +569,6 @@ export function PlayClient({ slug }: { slug: string }) {
               i
             </button>
           </div>
-          <button
-            type="button"
-            aria-label="Toggle debug mode"
-            title="Toggle debug mode (Shift+D)"
-            onClick={() => setDebugMode((v) => !v)}
-            className={`absolute right-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border text-xs ${
-              debugMode
-                ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
-                : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
-            }`}
-          >
-            ·
-          </button>
         </div>
         <div className="mt-1 flex justify-center">
           <span className="text-sm text-zinc-500">Round {roundIndex + 1}</span>
@@ -655,6 +738,43 @@ export function PlayClient({ slug }: { slug: string }) {
           )}
         </div>
       )}
+
+      <div className="shrink-0 border-t border-white/10 bg-black/40 px-3 py-2 text-[11px] text-zinc-500 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          {pinterestBoardUrlFinal ? (
+            <a
+              href={pinterestBoardUrlFinal}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-500 hover:text-zinc-200 transition-colors"
+              title="Source Pinterest board"
+            >
+              Source Pinterest
+            </a>
+          ) : debugMode && pinterestBoardId ? (
+            <span
+              className="text-zinc-600"
+              title={`Pinterest board id: ${pinterestBoardId}`}
+            >
+              Pinterest id {pinterestBoardId.slice(0, 6)}…
+            </span>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          aria-label="Toggle debug mode"
+          title="Toggle debug mode (Shift+D)"
+          onClick={() => setDebugMode((v) => !v)}
+          className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs ${
+            debugMode
+              ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
+              : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10'
+          }`}
+        >
+          ·
+        </button>
+      </div>
     </div>
   );
 }

@@ -29,7 +29,7 @@ export async function POST(
     const ua = req.headers.get('user-agent');
     const ref = req.headers.get('referer');
 
-    const { session, roundIndex, left, right } = await createPlaySession(instance.id, {
+    const { session, roundIndex, left, right, pinterestBoardId, pinterestBoardUrl, preloadNext } = await createPlaySession(instance.id, {
       ipAddress: ip,
       userAgent: ua,
       referrer: ref,
@@ -40,6 +40,9 @@ export async function POST(
       roundIndex,
       left,
       right,
+      pinterestBoardId,
+      pinterestBoardUrl,
+      preloadNext,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to start';

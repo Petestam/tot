@@ -37,6 +37,7 @@ export async function POST(
       roundIndex: result.roundIndex,
       left: result.left,
       right: result.right,
+      preloadNext: result.preloadNext,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Choice failed';

@@ -2,6 +2,7 @@ import type { Pin, PlaySession } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { fisherYatesShuffle, randomBool } from '@/lib/game-shuffle';
 import { hasRenderableMediaUrl, sanitizeImageUrl, sanitizeVideoUrl } from '@/lib/media-url';
+import { getPinterestAccessTokenFromDb } from '@/lib/pinterest-token';
 
 export type PinDto = {
   id: string;
@@ -51,18 +52,92 @@ export function pinToDto(p: Pin): PinDto {
   };
 }
 
+export type PreloadPairDto = { left: PinDto; right: PinDto };
+
+/** Pins for the round after `currentCursor` (the pair at currentCursor+2..+3), with random left/right like a real round. */
+async function buildPreloadPairDto(
+  orderedIds: string[],
+  currentCursor: number
+): Promise<PreloadPairDto | null> {
+  const nextPair = nextPairFromOrder(orderedIds, currentCursor + 2);
+  if (!nextPair) return null;
+  const layout = layoutPair(nextPair.a, nextPair.b);
+  const pinMap = await loadPinsMap([layout.leftPinId, layout.rightPinId]);
+  const l = pinMap.get(layout.leftPinId);
+  const r = pinMap.get(layout.rightPinId);
+  if (!l || !r) return null;
+  return { left: pinToDto(l), right: pinToDto(r) };
+}
+
+type PinterestBoardUrlCacheEntry = { url: string; fetchedAtMs: number };
+const pinterestBoardUrlCache = new Map<string, PinterestBoardUrlCacheEntry>();
+const PINTEREST_BOARD_URL_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+function extractPinterestBoardUrlFromPinPayload(pinPayload: unknown, boardId: string): string | null {
+  if (!pinPayload || typeof pinPayload !== 'object') return null;
+  const payload = pinPayload as Record<string, unknown>;
+
+  const maybeBoard = payload.board;
+  if (maybeBoard && typeof maybeBoard === 'object') {
+    const b = maybeBoard as Record<string, unknown>;
+    for (const k of ['url', 'link', 'board_url', 'website_url']) {
+      const candidate = b[k];
+      if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate) && candidate.includes(boardId)) {
+        return candidate;
+      }
+    }
+  }
+
+  // Fallback: find any string that looks like a Pinterest board URL including the board id.
+  const visited = new Set<unknown>();
+  const visit = (v: unknown, depth: number): string | null => {
+    if (depth > 6) return null;
+    if (visited.has(v)) return null;
+    visited.add(v);
+
+    if (typeof v === 'string') {
+      if (!v.includes('pinterest.com')) return null;
+      if (!v.includes(boardId)) return null;
+      if (v.includes('/boards/') || v.includes('/board/') || v.includes('/ideas/')) return v;
+      return null;
+    }
+
+    if (Array.isArray(v)) {
+      for (const el of v) {
+        const found = visit(el, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    if (typeof v === 'object' && v !== null) {
+      for (const val of Object.values(v as Record<string, unknown>)) {
+        const found = visit(val, depth + 1);
+        if (found) return found;
+      }
+    }
+
+    return null;
+  };
+
+  return visit(pinPayload, 0);
+}
+
 export async function createPlaySession(
   instanceId: string,
   meta?: { ipAddress?: string | null; userAgent?: string | null; referrer?: string | null }
 ): Promise<{
   session: PlaySession;
+  pinterestBoardId: string;
+  pinterestBoardUrl: string | null;
+  preloadNext: PreloadPairDto | null;
   roundIndex: number;
   left: PinDto;
   right: PinDto;
 }> {
   const inst = await prisma.gameInstance.findUnique({
     where: { id: instanceId },
-    select: { id: true, archivedAt: true },
+    select: { id: true, archivedAt: true, pinterestBoardId: true },
   });
   if (!inst) throw new Error('Game not found');
   if (inst.archivedAt) {
@@ -112,8 +187,42 @@ export async function createPlaySession(
     },
   });
 
+  let pinterestBoardUrl: string | null = null;
+  const boardId = inst.pinterestBoardId;
+  const cached = pinterestBoardUrlCache.get(boardId);
+  if (cached && Date.now() - cached.fetchedAtMs < PINTEREST_BOARD_URL_CACHE_TTL_MS) {
+    pinterestBoardUrl = cached.url;
+  } else {
+    // Best-effort: fetch one pin payload to extract the parent board public URL.
+    // This is cached per board to avoid extra Pinterest calls per session.
+    const token = await getPinterestAccessTokenFromDb();
+    if (token) {
+      try {
+        const pinIdForBoardUrl = left.pinterestPinId; // one request per cache miss
+        const r = await fetch(`https://api.pinterest.com/v5/pins/${encodeURIComponent(pinIdForBoardUrl)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (r.ok) {
+          const pinPayload = (await r.json()) as unknown;
+          pinterestBoardUrl = extractPinterestBoardUrlFromPinPayload(pinPayload, boardId);
+          if (pinterestBoardUrl) {
+            pinterestBoardUrlCache.set(boardId, { url: pinterestBoardUrl, fetchedAtMs: Date.now() });
+          }
+        }
+      } catch {
+        // If Pinterest is rate-limiting/unavailable, the game can still play.
+        pinterestBoardUrl = null;
+      }
+    }
+  }
+
+  const preloadNext = await buildPreloadPairDto(orderedIds, 0);
+
   return {
     session,
+    pinterestBoardId: inst.pinterestBoardId,
+    pinterestBoardUrl,
+    preloadNext,
     roundIndex: 0,
     left: pinToDto(left),
     right: pinToDto(right),
@@ -130,6 +239,7 @@ export async function applyChoice(
       roundIndex: number;
       left: PinDto;
       right: PinDto;
+      preloadNext: PreloadPairDto | null;
     }
 > {
   const session = await prisma.playSession.findUnique({
@@ -164,6 +274,11 @@ export async function applyChoice(
     if (!l || !r) throw new Error('Pin rows missing');
     nextLeftDto = pinToDto(l);
     nextRightDto = pinToDto(r);
+  }
+
+  let preloadNextDto: PreloadPairDto | null = null;
+  if (layoutNext) {
+    preloadNextDto = await buildPreloadPairDto(orderedIds, nextCursor);
   }
 
   await prisma.$transaction(async (tx) => {
@@ -208,5 +323,6 @@ export async function applyChoice(
     roundIndex: roundIndex + 1,
     left: nextLeftDto,
     right: nextRightDto,
+    preloadNext: preloadNextDto,
   };
 }
