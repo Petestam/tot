@@ -11,6 +11,14 @@ export function isHttpMediaUrl(url: string | null | undefined): boolean {
   }
 }
 
+/** HLS manifests work in Safari’s native video element; Chromium needs hls.js — do not use as plain src. */
+const M3U8_PATH_RE = /\.m3u8(\?|#|$)/i;
+
+export function isNativeVideoElementUrl(url: string | null | undefined): boolean {
+  if (!isHttpMediaUrl(url)) return false;
+  return !M3U8_PATH_RE.test(url!.trim());
+}
+
 export function sanitizeVideoUrl(url: string | null | undefined): string | null {
   return isHttpMediaUrl(url) ? url!.trim() : null;
 }

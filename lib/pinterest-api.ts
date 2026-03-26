@@ -67,11 +67,16 @@ function deepFindUrl(obj: unknown, depth = 0): string | null {
   return null;
 }
 
-const VIDEO_URL_HINT_RE = /\.(mp4|webm|ogg)(\?|#|$)/i;
+const VIDEO_URL_HINT_RE = /\.(mp4|webm|ogg|m3u8)(\?|#|$)/i;
 
 function looksLikeVideoUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
-  return VIDEO_URL_HINT_RE.test(url) || /\/video\//i.test(url);
+  return (
+    VIDEO_URL_HINT_RE.test(url) ||
+    /\/video\//i.test(url) ||
+    /\/hls\//i.test(url) ||
+    /playlist\.m3u8/i.test(url)
+  );
 }
 
 /**
@@ -115,6 +120,10 @@ function collectVideoCandidateUrlsFromMedia(media: Record<string, unknown>): str
 
   walkVideoList(media.video_list);
 
+  // Top-level fields returned by GET /v5/pins/{id} (often populated; sometimes both null for third-party apps).
+  pushIfVideo(media.video_url);
+  pushIfVideo(media.video_url_hls);
+
   const single = media.video;
   if (single && typeof single === 'object') {
     const o = single as Record<string, unknown>;
@@ -131,7 +140,9 @@ function pickBestPlayableVideoUrl(urls: string[]): string | null {
   if (mp4) return mp4;
   const webm = urls.find((u) => /\.webm(\?|#|$)/i.test(u));
   if (webm) return webm;
-  return urls.find((u) => looksLikeVideoUrl(u)) ?? urls[0] ?? null;
+  const nonHls = urls.find((u) => looksLikeVideoUrl(u) && !/\.m3u8(\?|#|$)/i.test(u));
+  if (nonHls) return nonHls;
+  return urls.find((u) => /\.m3u8(\?|#|$)/i.test(u)) ?? urls[0] ?? null;
 }
 
 function resolveVideoUrl(media: Record<string, unknown>): string | null {

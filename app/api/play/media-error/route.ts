@@ -6,7 +6,7 @@ type MediaErrorBody = {
   roundIndex?: number;
   side?: 'left' | 'right';
   pinId?: string | null;
-  mediaType?: 'video' | 'gif' | 'image' | 'video_poster' | 'none';
+  mediaType?: 'video' | 'gif' | 'image' | 'video_poster' | 'hls_only' | 'none';
   imageUrl?: string | null;
   videoUrl?: string | null;
   renderedUrl?: string | null;

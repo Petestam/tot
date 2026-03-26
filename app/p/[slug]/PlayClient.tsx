@@ -4,7 +4,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDrag } from '@use-gesture/react';
-import { isHttpMediaUrl } from '@/lib/media-url';
+import { isHttpMediaUrl, isNativeVideoElementUrl } from '@/lib/media-url';
 
 // When a Pinterest pin is a video/gif, it may have a playable URL (videoUrl) in addition to a thumbnail.
 type PinDtoWithMotion = {
@@ -45,7 +45,10 @@ export function PlayClient({ slug }: { slug: string }) {
   /** How we surface the pin in UI / debug (not the same as Pinterest media_type). */
   const mediaLabel = (pin: PinDtoWithMotion | null): string => {
     if (!pin) return 'none';
-    if (isHttpMediaUrl(pin.videoUrl)) return 'video';
+    if (isHttpMediaUrl(pin.videoUrl)) {
+      if (!isNativeVideoElementUrl(pin.videoUrl)) return 'hls_only';
+      return 'video';
+    }
     if (pin.imageUrl?.toLowerCase().includes('.gif')) return 'gif';
     const img = pin.imageUrl?.toLowerCase() ?? '';
     // Poster JPEG for a video pin when we have no stored MP4 (common from API/sync).
@@ -89,7 +92,13 @@ export function PlayClient({ slug }: { slug: string }) {
         roundIndex,
         side: args.side,
         pinId: args.pin?.id ?? null,
-        mediaType: mediaLabel(args.pin) as 'video' | 'gif' | 'image' | 'video_poster' | 'none',
+        mediaType: mediaLabel(args.pin) as
+          | 'video'
+          | 'gif'
+          | 'image'
+          | 'video_poster'
+          | 'hls_only'
+          | 'none',
         imageUrl: args.pin?.imageUrl ?? null,
         videoUrl: args.pin?.videoUrl ?? null,
         renderedUrl: args.renderedUrl,
@@ -500,7 +509,7 @@ export function PlayClient({ slug }: { slug: string }) {
           className="flex-1 relative min-w-0 border-r border-white/10 active:bg-white/5 transition-colors"
           onClick={() => submitPick(left.id)}
         >
-          {isHttpMediaUrl(left.videoUrl) ? (
+          {isNativeVideoElementUrl(left.videoUrl) ? (
             <video
               key={leftVideoSrc ?? left.videoUrl}
               src={leftVideoSrc ?? left.videoUrl!}
@@ -547,7 +556,7 @@ export function PlayClient({ slug }: { slug: string }) {
           className="flex-1 relative min-w-0 active:bg-white/5 transition-colors"
           onClick={() => submitPick(right.id)}
         >
-          {isHttpMediaUrl(right.videoUrl) ? (
+          {isNativeVideoElementUrl(right.videoUrl) ? (
             <video
               key={rightVideoSrc ?? right.videoUrl}
               src={rightVideoSrc ?? right.videoUrl!}
