@@ -74,6 +74,72 @@ function looksLikeVideoUrl(url: string): boolean {
   return VIDEO_URL_HINT_RE.test(url) || /\/video\//i.test(url);
 }
 
+/**
+ * Pinterest often exposes MP4 (or other) URLs under `media.video_list` as a map of
+ * quality keys → `{ url, width, height, ... }` rather than only in deep-nested trees.
+ */
+function collectVideoCandidateUrlsFromMedia(media: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const pushIfVideo = (u: unknown) => {
+    if (typeof u === 'string' && isHttpMediaUrl(u) && looksLikeVideoUrl(u)) out.push(u);
+  };
+
+  const walkVideoList = (vlist: unknown) => {
+    if (!vlist || typeof vlist !== 'object') return;
+    if (Array.isArray(vlist)) {
+      for (const slot of vlist) {
+        if (slot && typeof slot === 'object') {
+          const o = slot as Record<string, unknown>;
+          pushIfVideo(o.url);
+          pushIfVideo(o.video_url);
+          if (o.video && typeof o.video === 'object') {
+            pushIfVideo((o.video as { url?: string }).url);
+          }
+        }
+      }
+      return;
+    }
+    for (const slot of Object.values(vlist as Record<string, unknown>)) {
+      if (slot && typeof slot === 'object') {
+        const o = slot as Record<string, unknown>;
+        pushIfVideo(o.url);
+        pushIfVideo(o.video_url);
+        if (o.video && typeof o.video === 'object') {
+          pushIfVideo((o.video as { url?: string }).url);
+        }
+      } else if (typeof slot === 'string') {
+        pushIfVideo(slot);
+      }
+    }
+  };
+
+  walkVideoList(media.video_list);
+
+  const single = media.video;
+  if (single && typeof single === 'object') {
+    const o = single as Record<string, unknown>;
+    pushIfVideo(o.url);
+    pushIfVideo(o.video_url);
+  }
+
+  return out;
+}
+
+function pickBestPlayableVideoUrl(urls: string[]): string | null {
+  if (urls.length === 0) return null;
+  const mp4 = urls.find((u) => /\.mp4(\?|#|$)/i.test(u));
+  if (mp4) return mp4;
+  const webm = urls.find((u) => /\.webm(\?|#|$)/i.test(u));
+  if (webm) return webm;
+  return urls.find((u) => looksLikeVideoUrl(u)) ?? urls[0] ?? null;
+}
+
+function resolveVideoUrl(media: Record<string, unknown>): string | null {
+  const fromHarvest = pickBestPlayableVideoUrl(collectVideoCandidateUrlsFromMedia(media));
+  if (fromHarvest) return fromHarvest;
+  return deepFindFirstVideoUrl(media);
+}
+
 /** Best-effort extraction of a playable video URL from Pinterest media objects. */
 function deepFindFirstVideoUrl(obj: unknown, depth = 0): string | null {
   if (depth > 12 || obj === null || obj === undefined) return null;
@@ -201,7 +267,7 @@ export function mapPinterestPin(pin: PinterestPin): PinItem {
         ? pickFromImageSizeMap(media.images as Record<string, unknown>)
         : null;
     const url = cover ?? fromImages;
-    const videoUrl = deepFindFirstVideoUrl(media);
+    const videoUrl = resolveVideoUrl(media);
     return { id: pin.id, title, imageUrl: url, videoUrl };
   }
 
@@ -209,7 +275,7 @@ export function mapPinterestPin(pin: PinterestPin): PinItem {
   if (mediaType === 'image' && media.images && typeof media.images === 'object') {
     const images = media.images as Record<string, unknown>;
     const animatedGifUrl = pickGifFromImageSizeMap(images) ?? deepFindFirstGifUrl(media);
-    const videoUrl = deepFindFirstVideoUrl(media);
+    const videoUrl = resolveVideoUrl(media);
     const url = animatedGifUrl ?? pickFromImageSizeMap(images);
     return { id: pin.id, title, imageUrl: url, videoUrl };
   }

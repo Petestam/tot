@@ -5,6 +5,7 @@ import { hasRenderableMediaUrl, sanitizeImageUrl, sanitizeVideoUrl } from '@/lib
 
 export type PinDto = {
   id: string;
+  pinterestPinId: string;
   imageUrl: string | null;
   videoUrl: string | null;
   title: string;
@@ -43,6 +44,7 @@ export async function loadPinsMap(ids: string[]): Promise<Map<string, Pin>> {
 export function pinToDto(p: Pin): PinDto {
   return {
     id: p.id,
+    pinterestPinId: p.pinterestPinId,
     imageUrl: sanitizeImageUrl(p.imageUrl),
     videoUrl: sanitizeVideoUrl(p.videoUrl),
     title: p.title,

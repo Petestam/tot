@@ -1,12 +1,21 @@
 /* eslint-disable @next/next/no-img-element -- Pinterest CDN URLs; avoid optimizer config */
 'use client';
 
+import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDrag } from '@use-gesture/react';
 import { isHttpMediaUrl } from '@/lib/media-url';
 
 // When a Pinterest pin is a video/gif, it may have a playable URL (videoUrl) in addition to a thumbnail.
-type PinDtoWithMotion = { id: string; imageUrl: string | null; videoUrl: string | null; title: string };
+type PinDtoWithMotion = {
+  id: string;
+  pinterestPinId: string;
+  imageUrl: string | null;
+  videoUrl: string | null;
+  title: string;
+};
+
+type PinterestPinRawDebug = { loading: boolean; error: string | null; payload: unknown | null };
 
 /** Reserve space for global site footer (fixed) */
 const mainMinH = 'min-h-[calc(100dvh-3.5rem)]';
@@ -26,6 +35,8 @@ export function PlayClient({ slug }: { slug: string }) {
   const [introOpen, setIntroOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [leftPinterestRaw, setLeftPinterestRaw] = useState<PinterestPinRawDebug | null>(null);
+  const [rightPinterestRaw, setRightPinterestRaw] = useState<PinterestPinRawDebug | null>(null);
 
   const leftVideoRef = useRef<HTMLVideoElement | null>(null);
   const rightVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -170,18 +181,72 @@ export function PlayClient({ slug }: { slug: string }) {
       roundIndex,
       left: {
         pinId: left?.id ?? null,
+        pinterestPinId: left?.pinterestPinId ?? null,
         mediaType: mediaLabel(left),
         imageUrl: left?.imageUrl ?? null,
         videoUrl: left?.videoUrl ?? null,
       },
       right: {
         pinId: right?.id ?? null,
+        pinterestPinId: right?.pinterestPinId ?? null,
         mediaType: mediaLabel(right),
         imageUrl: right?.imageUrl ?? null,
         videoUrl: right?.videoUrl ?? null,
       },
     });
   }, [debugMode, slug, publicId, roundIndex, left, right]);
+
+  useEffect(() => {
+    if (!debugMode) {
+      setLeftPinterestRaw(null);
+      setRightPinterestRaw(null);
+      return;
+    }
+    const pidL = left?.pinterestPinId;
+    const pidR = right?.pinterestPinId;
+    let cancelled = false;
+
+    async function loadOne(
+      pinterestPinId: string,
+      setRaw: Dispatch<SetStateAction<PinterestPinRawDebug | null>>
+    ) {
+      setRaw({ loading: true, error: null, payload: null });
+      try {
+        const r = await fetch(
+          `/api/admin/debug/pinterest-pin?pinterestPinId=${encodeURIComponent(pinterestPinId)}`,
+          { credentials: 'include' }
+        );
+        const data: unknown = await r.json();
+        if (cancelled) return;
+        if (!r.ok) {
+          const err =
+            typeof data === 'object' && data !== null && 'error' in data
+              ? String((data as { error?: unknown }).error)
+              : `HTTP ${r.status}`;
+          setRaw({ loading: false, error: err, payload: data });
+          return;
+        }
+        setRaw({ loading: false, error: null, payload: data });
+      } catch (e) {
+        if (!cancelled) {
+          setRaw({
+            loading: false,
+            error: e instanceof Error ? e.message : 'Fetch failed',
+            payload: null,
+          });
+        }
+      }
+    }
+
+    if (pidL) void loadOne(pidL, setLeftPinterestRaw);
+    else setLeftPinterestRaw(null);
+    if (pidR) void loadOne(pidR, setRightPinterestRaw);
+    else setRightPinterestRaw(null);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debugMode, left?.pinterestPinId, right?.pinterestPinId]);
 
   const submitPick = useCallback(
     async (pickedPinId: string) => {
@@ -509,14 +574,58 @@ export function PlayClient({ slug }: { slug: string }) {
       </div>
 
       {debugMode && (
-        <div className="shrink-0 border-t border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-100">
+        <div className="shrink-0 border-t border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-100 space-y-2">
           <p className="font-medium">Debug mode ON (Shift+D to toggle)</p>
-          <p>Left: {mediaLabel(left)} | pin {left?.id ?? 'n/a'}</p>
+          <p className="text-emerald-200/90">
+            Raw Pinterest REST: opens in same tab via{' '}
+            <code className="rounded bg-black/40 px-1">GET /api/admin/debug/pinterest-pin</code>. Works locally
+            without login; on production log into <code className="rounded bg-black/40 px-1">/admin</code> first
+            so the session cookie is sent.
+          </p>
+          <p>Left: {mediaLabel(left)} | db pin {left?.id ?? 'n/a'} | Pinterest id {left?.pinterestPinId ?? 'n/a'}</p>
           <p className="break-all">left.imageUrl: {left?.imageUrl ?? 'null'}</p>
           <p className="break-all">left.videoUrl: {left?.videoUrl ?? 'null'}</p>
-          <p>Right: {mediaLabel(right)} | pin {right?.id ?? 'n/a'}</p>
+          <p>Right: {mediaLabel(right)} | db pin {right?.id ?? 'n/a'} | Pinterest id {right?.pinterestPinId ?? 'n/a'}</p>
           <p className="break-all">right.imageUrl: {right?.imageUrl ?? 'null'}</p>
           <p className="break-all">right.videoUrl: {right?.videoUrl ?? 'null'}</p>
+
+          {leftPinterestRaw && (
+            <details className="rounded border border-emerald-500/20 bg-black/30" open>
+              <summary className="cursor-pointer select-none px-2 py-1 font-medium">
+                Left — full Pinterest API response (GET /v5/pins/{left?.pinterestPinId})
+              </summary>
+              <div className="border-t border-emerald-500/20 px-2 pb-2">
+                {leftPinterestRaw.loading && <p className="py-2">Loading Pinterest…</p>}
+                {leftPinterestRaw.error && (
+                  <p className="py-2 text-amber-300">{leftPinterestRaw.error}</p>
+                )}
+                {leftPinterestRaw.payload != null && (
+                  <pre className="mt-1 max-h-[min(50vh,28rem)] overflow-auto whitespace-pre-wrap break-words rounded bg-black/50 p-2 text-[10px] leading-relaxed text-emerald-50/95">
+                    {JSON.stringify(leftPinterestRaw.payload, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </details>
+          )}
+
+          {rightPinterestRaw && (
+            <details className="rounded border border-emerald-500/20 bg-black/30" open>
+              <summary className="cursor-pointer select-none px-2 py-1 font-medium">
+                Right — full Pinterest API response (GET /v5/pins/{right?.pinterestPinId})
+              </summary>
+              <div className="border-t border-emerald-500/20 px-2 pb-2">
+                {rightPinterestRaw.loading && <p className="py-2">Loading Pinterest…</p>}
+                {rightPinterestRaw.error && (
+                  <p className="py-2 text-amber-300">{rightPinterestRaw.error}</p>
+                )}
+                {rightPinterestRaw.payload != null && (
+                  <pre className="mt-1 max-h-[min(50vh,28rem)] overflow-auto whitespace-pre-wrap break-words rounded bg-black/50 p-2 text-[10px] leading-relaxed text-emerald-50/95">
+                    {JSON.stringify(rightPinterestRaw.payload, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </details>
+          )}
         </div>
       )}
     </div>
