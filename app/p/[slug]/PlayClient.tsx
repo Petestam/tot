@@ -42,10 +42,14 @@ export function PlayClient({ slug }: { slug: string }) {
   const rightVideoRef = useRef<HTMLVideoElement | null>(null);
   const choiceInFlight = useRef(false);
 
+  /** How we surface the pin in UI / debug (not the same as Pinterest media_type). */
   const mediaLabel = (pin: PinDtoWithMotion | null): string => {
     if (!pin) return 'none';
     if (isHttpMediaUrl(pin.videoUrl)) return 'video';
     if (pin.imageUrl?.toLowerCase().includes('.gif')) return 'gif';
+    const img = pin.imageUrl?.toLowerCase() ?? '';
+    // Poster JPEG for a video pin when we have no stored MP4 (common from API/sync).
+    if (img.includes('/videos/thumbnails/')) return 'video_poster';
     if (pin.imageUrl) return 'image';
     return 'none';
   };
@@ -85,7 +89,7 @@ export function PlayClient({ slug }: { slug: string }) {
         roundIndex,
         side: args.side,
         pinId: args.pin?.id ?? null,
-        mediaType: mediaLabel(args.pin) as 'video' | 'gif' | 'image' | 'none',
+        mediaType: mediaLabel(args.pin) as 'video' | 'gif' | 'image' | 'video_poster' | 'none',
         imageUrl: args.pin?.imageUrl ?? null,
         videoUrl: args.pin?.videoUrl ?? null,
         renderedUrl: args.renderedUrl,
@@ -194,7 +198,21 @@ export function PlayClient({ slug }: { slug: string }) {
         videoUrl: right?.videoUrl ?? null,
       },
     });
-  }, [debugMode, slug, publicId, roundIndex, left, right]);
+    // Primitives only — avoids duplicate logs when object identity changes without a new round.
+  }, [
+    debugMode,
+    slug,
+    publicId,
+    roundIndex,
+    left?.id,
+    left?.pinterestPinId,
+    left?.imageUrl,
+    left?.videoUrl,
+    right?.id,
+    right?.pinterestPinId,
+    right?.imageUrl,
+    right?.videoUrl,
+  ]);
 
   useEffect(() => {
     if (!debugMode) {
